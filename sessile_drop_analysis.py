@@ -64,11 +64,11 @@ def getcurrframe(filename,framenr,filetype):
         image=vid.get_data(framenr)[:,:,0]
         return image
     def tifstack():
-        stack=io.imread(filename)
+        stack=io.imread(filename, as_gray = True)
         image=stack[framenr,:,:]
         return image
     def images():
-        image=io.imread(filename[framenr])
+        image=io.imread(filename[framenr],as_gray = True)
         return image
     filetypes={0 : movie,
            1 : tifstack,
@@ -79,6 +79,7 @@ def getcurrframe(filename,framenr,filetype):
 
 
 image = getcurrframe(filename,0,filetype)
+print(image.shape)
 
 #preallocate crop coordinates, maybe unescecarry?
 coords=[0,0,0,0]
@@ -114,14 +115,31 @@ contactpointright=np.zeros(nframes)
 contactpointleft=np.zeros(nframes)
 dropvolume=np.zeros(nframes)
 
+print(base)
+
 #loop over frames
 for framenr in range (0,nframes):
     image = getcurrframe(filename,framenr,filetype) #get current frame
     cropped=np.array(image[round(coords[2]):round(coords[3]),round(coords[0]):round(coords[1])]) #crop frame
     edgeleft, edgeright=edge(cropped,thresh) #find the edge with edge function in edge_detection.py
+
+    print(edgeleft.shape)
+    print(edgeright.shape)
+
+    print(framesize)
+
     baseline=LineString(base) #using shapely we construct baseline
+
     rightline=LineString(np.column_stack((edgeright,(range(framesize[0]))))) #and the lines of the edges
     leftline=LineString(np.column_stack((edgeleft,(range(framesize[0])))))
+
+
+    print(rightline.xy)
+    print(leftline.xy)
+    plt.plot(*baseline.xy)
+    plt.plot(*leftline.xy)
+    plt.plot(*rightline.xy)
+    plt.show()
     leftcontact=baseline.intersection(leftline) #we find the intersectionpoint of the baseline with the edge
     rightcontact=baseline.intersection(rightline)
     #Detect small drops that are lower than 'k' pixels
