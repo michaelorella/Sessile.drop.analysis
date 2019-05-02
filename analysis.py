@@ -30,6 +30,7 @@ baselineThreshold = 20
 circleThreshold = 5
 everyNSeconds = 1
 sigma = 5
+startSeconds = 10
 
 #Get the file type for the image file
 parts = image.split('.')
@@ -37,9 +38,9 @@ ext = parts[-1]
 
 video = False
 
-if ext == 'avi' or ext == 'mp4':
+if ext.lower() == 'avi' or ext.lower() == 'mp4':
 	video = True
-elif ext != 'jpg' and ext != 'png' and ext != 'gif':
+elif ext.lower() != 'jpg' and ext.lower() != 'png' and ext.lower() != 'gif':
 	raise ValueError(f'Invalid file extension provided. I can\'t read {ext} files')
 
 #Overwrite these defaults if desired
@@ -55,7 +56,9 @@ for argPair in kwargs:
 	elif argPair[0] == '-t' or argPair[0] == '--times':
 		everyNSeconds = float(argPair[1])
 	elif argPair[0] == '-s':
-		sigma = argPair[1]
+		sigma = float(argPair[1])
+	elif argPair[0] == '-ss' or argPair[0] == '--startSeconds':
+		startSeconds = float(argPair[1])
 
 
 ### Strategy for automating contact angle measurements for Lauren+McLain
@@ -76,9 +79,9 @@ else:
 
 	#Perform the conversion and extract only so many frames to analyze
 	images = [ np.dot(im,conversion) for i,im in enumerate(images) 
-				if i % (everyNSeconds * np.round(fps) ) == 0 ]
+				if ( i % (everyNSeconds * np.round(fps) ) == 0) and
+				   ( i / fps > startSeconds ) ]
 	images = [im / im.max() for im in images]
-	images = images[5:]
 
 # Get 4-list of points for left, right, top, and bottom crop (in that order)
 
@@ -231,5 +234,18 @@ y = m * x + b
 plt.plot(x,y,'r-')
 
 plt.figure(figsize = (5,5))
-plt.plot(time,angles)
+plt.plot(time,angles,'.')
+plt.draw()
+
+if '\\' in image:
+	parts = image.split('\\')
+else:
+	parts = image.split('/')
+path = '/'.join(parts[:-1]) #Leave off the actual file part
+
+with open(path + f'/results_{parts[-1]}.csv','w+') as file:
+	file.write(",".join([str(t) for t in time]))
+	file.write('\n')
+	file.write(",".join([str(s) for s in angles]))
+
 plt.show()
