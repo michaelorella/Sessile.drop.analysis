@@ -79,8 +79,8 @@ else:
 
 	#Perform the conversion and extract only so many frames to analyze
 	images = [ np.dot(im,conversion) for i,im in enumerate(images) 
-				if ( i % (everyNSeconds * np.round(fps) ) == 0) and
-				   ( i / fps > startSeconds ) ]
+				if ( ( i / np.round(fps) - startSeconds ) % everyNSeconds ) == 0) and
+				   ( i / np.round(fps) > startSeconds ) ]
 	images = [im / im.max() for im in images]
 
 # Get 4-list of points for left, right, top, and bottom crop (in that order)
