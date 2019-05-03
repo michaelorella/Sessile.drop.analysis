@@ -14,6 +14,7 @@ import imageio
 
 #Plotting
 import matplotlib.pyplot as plt
+import matplotlib.widgets as widgets
 
 #Numerical analysis
 import numpy as np
@@ -79,7 +80,7 @@ else:
 
 	#Perform the conversion and extract only so many frames to analyze
 	images = [ np.dot(im,conversion) for i,im in enumerate(images) 
-				if ( ( i / np.round(fps) - startSeconds ) % everyNSeconds ) == 0) and
+				if ( ( i / np.round(fps) - startSeconds ) % everyNSeconds ) == 0 and
 				   ( i / np.round(fps) > startSeconds ) ]
 	images = [im / im.max() for im in images]
 
@@ -108,6 +109,27 @@ def rootFun(x,z,r,m,b):
 	res[0] = (x[0] - z[0]) ** 2 + (x[1] - z[1])**2 - r**2
 	res[1] = x[1] - m*x[0] - b
 	return res
+
+
+# Make sure that the edges are being detected well
+edges = feature.canny(images[0],sigma = sigma)
+fig , ax = plt.subplots(2,1,gridspec_kw = {'height_ratios': [10,1]} , figsize = (8,8))
+ax[0].imshow(edges, cmap = 'gray_r', vmin = 0, vmax = 1)
+ax[0].set_xlim(cropPoints[:2])
+ax[0].set_ylim(cropPoints[2:])
+ax[0].axis('off')
+
+sigmaSlide = widgets.Slider(ax[1],r'$\log_{10}\sigma$',-1,1,valinit = 0,color = 'gray')
+
+def update(val):
+	edges = feature.canny(images[0], sigma = np.power(10,val))
+	ax[0].imshow(edges,cmap = 'gray_r',vmin = 0,vmax = 1)
+	fig.canvas.draw_idle()
+	sigma = val
+
+sigmaSlide.on_changed(update)
+
+plt.show()
 
 for j,im in enumerate(images):
 	### Using scikit-image canny edge detection, find the image edges
