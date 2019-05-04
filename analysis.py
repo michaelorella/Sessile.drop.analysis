@@ -87,6 +87,7 @@ else:
 # Get 4-list of points for left, right, top, and bottom crop (in that order)
 
 # Show the first image in the stack so that user can select crop box
+print('Waiting for your input, please crop the image as desired and hit enter')
 viewer = ImageViewer(images[0])
 rect_tool = RectangleTool(viewer, on_enter = viewer.closeEvent)
 viewer.show()
@@ -125,11 +126,12 @@ def update(val):
 	edges = feature.canny(images[0], sigma = np.power(10,val))
 	ax[0].imshow(edges,cmap = 'gray_r',vmin = 0,vmax = 1)
 	fig.canvas.draw_idle()
-	sigma = val
+	sigma = np.power(10,val)
 
 sigmaSlide.on_changed(update)
-
+print('Waiting for your input, please select a desired filter value, and close image when done')
 plt.show()
+print(f'Proceeding with sigma = {sigma}')
 
 for j,im in enumerate(images):
 	### Using scikit-image canny edge detection, find the image edges
