@@ -220,20 +220,44 @@ for j,im in enumerate(images):
 
 	# Now we need to actually get the points of intersection and the angles from
 	# these fitted curves
-	# Define the baseline vector
-	v1 = [-1, -m]
+	# Rather than brute force numerical solution, use combinations of coordinate translations and
+	# rotations to arrive at a horizontal line passing through a circle
 
-	# Get the point to the right of circle center
-	res = opt.root(lambda x: rootFun(x,z,r,m,b), [z[0] + r , z[1]])
-	x,y = res['x']
+	# First step will be to translate the origin to the center-point of our fitted circle
+	# x = x - z[0], y = y - z[1]
+	# Circle : x**2 + y**2 = r**2
+	# Line : y = m * x + (m * z[0] + b - z[1])
 
-	if y != z[1]:
-		dydx = -(x - z[0]) / (y - z[1])
-		v2 = [1 if dydx <= 0 else -1 , dydx if dydx >= 0 else -dydx]
+	# Now we need to rotate clockwise about the origin by an angle q, s.t. tan(q) = m
+	# Our transformation is defined by the typical rotation matrix 
+	#	[x;y] = [ [ cos(q) , sin(q) ] ; 
+	#			  [-sin(q) , cos(q) ] ] * [ x ; y ]
+	# Circle : x**2 + y**2 = r**2
+	# Line : y = (m*z[0] + b[0] - z[1])/sqrt(1 + m**2) (no dependence on x - as expected)
+
+	# With this simplified scenario, we can easily identify the points (x,y) where the line y = B
+	# intersects the circle x**2 + y**2 = r**2
+	# In our transformed coordinates, only keeping the positive root, this is:
+	B = ( m * z[0] + b - z[1] ) / np.sqrt( 1 + m**2 )
+	x_t = np.sqrt( r ** 2 - B ** 2 )
+	y_t = B
+
+	# For contact angle, want interior angle, so look at vector in negative x direction 
+	# (this is our baseline)
+	v1 = [-1 , 0]
+
+	# Now get line tangent to circle at x_t, y_t
+	if B != 0:
+		slope = - x_t / y_t
+		v2 = np.array( [ 1 , slope ] )
+		v2 = v2 / np.linalg.norm ( v2 )
+		if B > 0: # We want the interior angle, so when the line is above the origin, look left 
+			v2 = -v2
 	else:
 		v2 = [0 , 1]
 
-	phi = np.arccos(np.dot(v1,v2)/np.linalg.norm(v1)/np.linalg.norm(v2))
+	# Calculate the angle between these two vectors defining the base-line and tangent-line
+	phi = np.arccos(np.dot(v1,v2))
 	print(f'Contact angle right: {phi*360/2/np.pi : 6.3f}')
 	angles += [ phi * 360 / 2 / np.pi ]
 	time += [ j * everyNSeconds ]
