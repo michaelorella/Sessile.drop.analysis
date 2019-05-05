@@ -251,7 +251,7 @@ for j,im in enumerate(images):
 		slope = - x_t / y_t
 		v2 = np.array( [ 1 , slope ] )
 		v2 = v2 / np.linalg.norm ( v2 )
-		if B > 0: # We want the interior angle, so when the line is above the origin, look left 
+		if B < 0: # We want the interior angle, so when the line is above the origin (into more negative y), look left 
 			v2 = -v2
 	else:
 		v2 = [0 , 1]
