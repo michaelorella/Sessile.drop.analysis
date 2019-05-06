@@ -96,6 +96,7 @@ cropPoints = np.array(np.round(cropPoints),dtype = int)
 
 time = []
 angles = []
+volumes = []
 
 # Define the loss function that we use for fitting
 def dist(param, points):
@@ -259,6 +260,7 @@ for j,im in enumerate(images):
 	# Calculate the angle between these two vectors defining the base-line and tangent-line
 	phi = np.arccos(np.dot(v1,v2))
 	print(f'Contact angle right: {phi*360/2/np.pi : 6.3f}')
+	volumes += [ 2/3 * np.pi * r ** 3  + np.pi * r ** 2 * B - np.pi * B / 3]
 	angles += [ phi * 360 / 2 / np.pi ]
 	time += [ j * everyNSeconds ]
 
@@ -295,5 +297,7 @@ with open(path + f'/results_{parts[-1]}.csv','w+') as file:
 	file.write(",".join([str(t) for t in time]))
 	file.write('\n')
 	file.write(",".join([str(s) for s in angles]))
+	file.write('\n')
+	file.write(','.join([str(s) for s in volumes]))
 
 plt.show()
