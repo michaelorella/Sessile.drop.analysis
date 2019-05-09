@@ -287,14 +287,18 @@ plt.plot(x,y,'r-')
 fig, ax1 = plt.subplots(figsize = (5,5))
 color = 'black'
 ax1.set_xlabel('Time [s]')
-ax1.set_ylabel('Contact Angle (deg)', fontsize = 10,color = color)
-ax1.plot(time,angles, marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10)
+ax1.set_ylabel('Contact Angle [deg]', fontsize = 10,color = color)
+ax1.plot(time,angles, marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10
+		 , linestyle = None)
 ax1.tick_params(axis = 'y', labelcolor = color)
 
 ax2 = ax1.twinx()
 color = 'red'
-ax2.plot(time,volumes,marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10)
+ax2.set_ylabel('Volume [px ** 3]', fontsize = 10,color = color)
+ax2.plot(time,volumes,marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10 
+		 , linestyle = None)
 ax2.tick_params(axis = 'y', labelcolor = color)
+
 plt.draw()
 
 if '\\' in image:
