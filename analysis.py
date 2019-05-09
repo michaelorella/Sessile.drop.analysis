@@ -122,6 +122,7 @@ ax[0].set_ylim(cropPoints[2:])
 ax[0].axis('off')
 
 sigmaSlide = widgets.Slider(ax[1],r'$\log_{10}\sigma$',-1,1,valinit = 0,color = 'gray')
+sigmaSlide = widgets.Slider(ax[1],r'$\log_{10}\sigma$',-1,1,valinit = np.log10(sigma),color = 'gray')
 
 def update(val):
 	edges = feature.canny(images[0], sigma = np.power(10,val))
@@ -132,6 +133,7 @@ def update(val):
 sigmaSlide.on_changed(update)
 print('Waiting for your input, please select a desired filter value, and close image when done')
 plt.show()
+sigma = np.power(10,sigmaSlide.val)
 print(f'Proceeding with sigma = {sigma}')
 
 for j,im in enumerate(images):
