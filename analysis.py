@@ -54,11 +54,11 @@ for argPair in kwargs:
 		baselineThreshold = int(argPair[1])
 	elif argPair[0] == '-c' or argPair[0] == '--circleThreshold':
 		circleThreshold = int(argPair[1])
-	elif argPair[0] == '-t' or argPair[0] == '--times':
+	elif (argPair[0] == '-t' or argPair[0] == '--times') and video:
 		everyNSeconds = float(argPair[1])
 	elif argPair[0] == '-s':
 		sigma = float(argPair[1])
-	elif argPair[0] == '-ss' or argPair[0] == '--startSeconds':
+	elif (argPair[0] == '-ss' or argPair[0] == '--startSeconds') and video:
 		startSeconds = float(argPair[1])
 
 
@@ -121,20 +121,18 @@ ax[0].set_xlim(cropPoints[:2])
 ax[0].set_ylim(cropPoints[2:])
 ax[0].axis('off')
 
-sigmaSlide = widgets.Slider(ax[1],r'$\log_{10}\sigma$',-1,1,valinit = 0,color = 'gray')
 sigmaSlide = widgets.Slider(ax[1],r'$\log_{10}\sigma$',-1,1,valinit = np.log10(sigma),color = 'gray')
 
 def update(val):
 	edges = feature.canny(images[0], sigma = np.power(10,val))
 	ax[0].imshow(edges,cmap = 'gray_r',vmin = 0,vmax = 1)
 	fig.canvas.draw_idle()
-	sigma = np.power(10,val)
 
 sigmaSlide.on_changed(update)
 print('Waiting for your input, please select a desired filter value, and close image when done')
 plt.show()
 sigma = np.power(10,sigmaSlide.val)
-print(f'Proceeding with sigma = {sigma}')
+print(f'Proceeding with sigma = {sigma : 6.2f}')
 
 for j,im in enumerate(images):
 	### Using scikit-image canny edge detection, find the image edges
@@ -260,10 +258,11 @@ for j,im in enumerate(images):
 		v2 = [0 , 1]
 
 	# Calculate the angle between these two vectors defining the base-line and tangent-line
-	phi = np.arccos(np.dot(v1,v2))
-	print(f'Contact angle right: {phi*360/2/np.pi : 6.3f}')
-	volumes += [ 2/3 * np.pi * r ** 3  + np.pi * r ** 2 * B - np.pi * B / 3]
-	angles += [ phi * 360 / 2 / np.pi ]
+	phi = np.arccos(np.dot(v1,v2))*360/2/np.pi
+	V = 2/3 * np.pi * r ** 3  + np.pi * r ** 2 * B - np.pi * B / 3
+	print(f'At time { j * everyNSeconds }: \t\t Contact angle (deg): {phi : 6.3f} \t\t Volume (px**3): {V : 6.3f}')
+	volumes += [ V ] 
+	angles += [ phi ]
 	time += [ j * everyNSeconds ]
 
 	# Might be more elegant to do it this way, but also could be more time consuming
@@ -285,8 +284,17 @@ x = np.array([0,im.shape[1]])
 y = m * x + b
 plt.plot(x,y,'r-')
 
-plt.figure(figsize = (5,5))
-plt.plot(time,angles,'.')
+fig, ax1 = plt.subplots(figsize = (5,5))
+color = 'black'
+ax1.set_xlabel('Time [s]')
+ax1.set_ylabel('Contact Angle (deg)', fontsize = 10,color = color)
+ax1.plot(time,angles, marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10)
+ax1.tick_params(axis = 'y', labelcolor = color)
+
+ax2 = ax1.twinx()
+color = 'red'
+ax2.plot(time,volumes,marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10)
+ax2.tick_params(axis = 'y', labelcolor = color)
 plt.draw()
 
 if '\\' in image:
@@ -294,8 +302,10 @@ if '\\' in image:
 else:
 	parts = image.split('/')
 path = '/'.join(parts[:-1]) #Leave off the actual file part
+filename = path + f'/results_{parts[-1]}.csv'
 
-with open(path + f'/results_{parts[-1]}.csv','w+') as file:
+print(f'Saving the data to {filename}')
+with open(filename,'w+') as file:
 	file.write(",".join([str(t) for t in time]))
 	file.write('\n')
 	file.write(",".join([str(s) for s in angles]))
