@@ -134,6 +134,9 @@ plt.show()
 sigma = np.power(10,sigmaSlide.val)
 print(f'Proceeding with sigma = {sigma : 6.2f}')
 
+plt.figure()
+scatAx = plt.axes()
+
 for j,im in enumerate(images):
 	### Using scikit-image canny edge detection, find the image edges
 	edges = feature.canny(im,sigma = sigma)
@@ -174,7 +177,7 @@ for j,im in enumerate(images):
 	circle = np.array([(x,y) for x,y in crop if
 											y - (m*x + b)  <= -circleThreshold])
 
-	plt.scatter(circle[:,0],circle[:,1])
+	scatAx.scatter(circle[:,0],circle[:,1])
 
 
 	# Get the cropped image width
@@ -259,8 +262,8 @@ for j,im in enumerate(images):
 
 	# Calculate the angle between these two vectors defining the base-line and tangent-line
 	phi = np.arccos(np.dot(v1,v2))*360/2/np.pi
-	V = 2/3 * np.pi * r ** 3  + np.pi * r ** 2 * B - np.pi * B / 3
-	print(f'At time { j * everyNSeconds }: \t\t Contact angle (deg): {phi : 6.3f} \t\t Volume (px**3): {V : 6.3f}')
+	V = 2/3 * np.pi * r ** 3  + np.pi * r ** 2 * B - np.pi * B ** 3 / 3
+	print(f'At time { j * everyNSeconds }: \t\t Contact angle (deg): {phi : 6.3f} \t\t Volume (px**3): {V : 6.3f} \t\t Radius (px): {r : 6.3f} \t\t Baseline (px): {B : 6.3f}')
 	volumes += [ V ] 
 	angles += [ phi ]
 	time += [ j * everyNSeconds ]
@@ -283,22 +286,28 @@ plt.plot(x,y,'r-')
 x = np.array([0,im.shape[1]])
 y = m * x + b
 plt.plot(x,y,'r-')
+plt.xlim(cropPoints[0:2])
+plt.ylim(cropPoints[-1:-3:-1])
+
+# Converting to relative volume changes
+volumes = np.array(volumes)/volumes[0]
 
 fig, ax1 = plt.subplots(figsize = (5,5))
 color = 'black'
 ax1.set_xlabel('Time [s]')
 ax1.set_ylabel('Contact Angle [deg]', fontsize = 10,color = color)
 ax1.plot(time,angles, marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10
-		 , linestyle = None)
+		 , linestyle = 'None')
 ax1.tick_params(axis = 'y', labelcolor = color)
 
 ax2 = ax1.twinx()
 color = 'red'
-ax2.set_ylabel('Volume [px ** 3]', fontsize = 10,color = color)
+ax2.set_ylabel('Volume [-]', fontsize = 10,color = color)
 ax2.plot(time,volumes,marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10 
-		 , linestyle = None)
+		 , linestyle = 'None')
 ax2.tick_params(axis = 'y', labelcolor = color)
 
+plt.tight_layout()
 plt.draw()
 
 if '\\' in image:
