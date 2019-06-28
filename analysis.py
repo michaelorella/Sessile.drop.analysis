@@ -110,14 +110,6 @@ def dist(param, points):
 			for point in points]
 	return np.sum(ar)
 
-# Define function that calculates residual for intersection between line (m,b) and circle (z,r)
-def rootFun(x,z,r,m,b):
-	res = [0,0]
-	res[0] = (x[0] - z[0]) ** 2 + (x[1] - z[1])**2 - r**2
-	res[1] = x[1] - m*x[0] - b
-	return res
-
-
 # Make sure that the edges are being detected well
 edges = feature.canny(images[0],sigma = sigma)
 fig , ax = plt.subplots(2,1,gridspec_kw = {'height_ratios': [10,1]} , figsize = (8,8))
