@@ -26,12 +26,12 @@ import scipy.optimize as opt
 function, image, *kwargs = sys.argv
 
 #Set default numerical arguments
-separationThreshold = 20
+separationThreshold = 10
 baselineThreshold = 20
 linThreshold = 20
 circleThreshold = 5
 everyNSeconds = 1
-sigma = 5
+σ = 5
 startSeconds = 10
 
 #Get the file type for the image file
@@ -56,7 +56,7 @@ for argPair in kwargs:
 	elif (argPair[0] == '-t' or argPair[0] == '--times') and video:
 		everyNSeconds = float(argPair[1])
 	elif argPair[0] == '-s':
-		sigma = float(argPair[1])
+		σ = float(argPair[1])
 	elif (argPair[0] == '-ss' or argPair[0] == '--startSeconds') and video:
 		startSeconds = float(argPair[1])
 
@@ -98,14 +98,14 @@ angles = []
 volumes = []
 
 # Make sure that the edges are being detected well
-edges = feature.canny(images[0],sigma = sigma)
+edges = feature.canny(images[0],sigma = σ)
 fig , ax = plt.subplots(2,1,gridspec_kw = {'height_ratios': [10,1]} , figsize = (8,8))
 ax[0].imshow(edges, cmap = 'gray_r', vmin = 0, vmax = 1)
 ax[0].set_xlim(cropPoints[:2])
 ax[0].set_ylim(cropPoints[2:])
 ax[0].axis('off')
 
-sigmaSlide = widgets.Slider(ax[1],r'$\log_{10}\sigma$',-1,1,valinit = np.log10(sigma),color = 'gray')
+sigmaSlide = widgets.Slider(ax[1],r'$\log_{10}\sigma$',-1,1,valinit = np.log10(σ),color = 'gray')
 
 def update(val):
 	edges = feature.canny(images[0], sigma = np.power(10,val))
@@ -115,8 +115,8 @@ def update(val):
 sigmaSlide.on_changed(update)
 print('Waiting for your input, please select a desired filter value, and close image when done')
 plt.show()
-sigma = np.power(10,sigmaSlide.val)
-print(f'Proceeding with sigma = {sigma : 6.2f}')
+σ = np.power(10,sigmaSlide.val)
+print(f'Proceeding with sigma = {σ : 6.2f}')
 
 # Create a set of axes to hold the scatter points for all frames in the videos
 plt.figure()
@@ -124,7 +124,7 @@ scatAx = plt.axes()
 
 for j,im in enumerate(images):
 	### Using scikit-image canny edge detection, find the image edges
-	edges = feature.canny(im,sigma = sigma)
+	edges = feature.canny(im,sigma = σ)
 
 	# Obtain the X,Y coordinates of the True values in this edge image 
 	# (for processing)
@@ -158,6 +158,8 @@ for j,im in enumerate(images):
 	c = np.concatenate((baseline['l'][:,1],baseline['r'][:,1]))
 	b,m = np.linalg.lstsq(A,c, rcond = None)[0]
 
+	print(f'Baseline: y = {m}*x + {b}')
+
 	# Now find the points in the circle
 	circle = np.array([(x,y) for x,y in crop if
 											y - (m*x + b)  <= -circleThreshold])
@@ -169,6 +171,7 @@ for j,im in enumerate(images):
 											y - (m*x + b) > -circleThreshold],kind = 'mergesort')
 	Δx = np.diff(baselinePoints)
 	indices = [i for i,out in enumerate(Δx > separationThreshold) if out]
+	print(indices)
 	indices = [indices[0] , indices[-1]+1]
 	limits = baselinePoints[indices]
 
@@ -205,13 +208,13 @@ for j,im in enumerate(images):
 	lv = [1, lm]/np.linalg.norm([1,lm])
 
 	# Calculate the angle between these two vectors defining the base-line and tangent-line
-	phi = {'l':180-np.arccos(np.dot(bv,lv))*360/2/np.pi , 'r':180-np.arccos(np.dot(bv,rv))*360/2/np.pi}
+	ϕ = {'l':180-np.arccos(np.dot(bv,lv))*360/2/np.pi , 'r':180-np.arccos(np.dot(bv,rv))*360/2/np.pi}
 	
 	# TODO:// Add the actual volume calculation here!
 
 
-	print(f'At time { j * everyNSeconds }: \t\t Contact angle left (deg): {phi["l"] : 6.3f} \t\t Contact angle right (deg): {phi["r"] : 6.3f}')
-	angles += [ phi ]
+	print(f'At time { j * everyNSeconds }: \t\t Contact angle left (deg): {ϕ["l"] : 6.3f} \t\t Contact angle right (deg): {ϕ["r"] : 6.3f}')
+	angles += [ ϕ ]
 	time += [ j * everyNSeconds ]
 
 # Plot the last resulting figure with the fitted lines overlaid
