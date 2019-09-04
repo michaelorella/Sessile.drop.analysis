@@ -152,35 +152,36 @@ for j,im in enumerate(images):
 										y >= cropPoints[2] and 
 										y <= cropPoints[3] )])}
 
-	# Fit the baseline to a line of form y = m*x + b using np.linalg
-	A = np.ones((baseline['l'].shape[0] + baseline['r'].shape[0],2))
-	A[:,1] = np.concatenate((baseline['l'][:,0],baseline['r'][:,0]))
-	c = np.concatenate((baseline['l'][:,1],baseline['r'][:,1]))
-	b,m = np.linalg.lstsq(A,c, rcond = None)[0]
+	# Fit the baseline to a line of form y = a[0] + a[1]*x + a[2]*x**2 using np.linalg
+	X = np.ones((baseline['l'].shape[0] + baseline['r'].shape[0],3))
+	x = np.concatenate((baseline['l'][:,0],baseline['r'][:,0]))
+	for col in range(X.shape[1]):
+		X[:,col] = np.power(x,col)
 
-	print(f'Baseline: y = {m}*x + {b}')
+	y = np.concatenate((baseline['l'][:,1],baseline['r'][:,1]))
+	a = np.linalg.lstsq(X,y, rcond = None)[0]
 
 	# Now find the points in the circle
 	circle = np.array([(x,y) for x,y in crop if
-											y - (m*x + b)  <= -circleThreshold])
+											y - (np.dot(a,[1,x,x**2]))  <= -circleThreshold])
 
 	scatAx.scatter(circle[:,0],circle[:,1])
 
 	# Look for the greatest distance between points on the baseline
-	baselinePoints = np.sort([x for x,y in crop if 
-											y - (m*x + b) > -circleThreshold],kind = 'mergesort')
-	Δx = np.diff(baselinePoints)
-	indices = [i for i,out in enumerate(Δx > separationThreshold) if out]
-	print(indices)
-	indices = [indices[0] , indices[-1]+1]
-	limits = baselinePoints[indices]
+	# Future Mike here: apparently I had the idea that a drop and baseline must be the same color - bad idea! There can still be edges at the bottom of the drop.
+	# To rectify this, I need some way of detecting where the circle pops up. Just look for points off of the baseline?
 
+	# Magic 2 just to get the top three rows of the circle to find where the edges are
+	offBaseline = np.array([ (x,y) for x,y in circle if y <= np.amax(circle,axis = 0)[1] and y >= np.amax(circle,axis = 0)[1] - 2])
+
+	limits = [ np.amin(offBaseline[:,0]) , np.amax(offBaseline[:,0]) ]
+	
 	# Get linear points
 	linearPoints = {'l':np.array( [ (x,y) for x,y in crop if 
-							   (y - (m*x + b) <= -circleThreshold and y - (m*x + b) >= -(circleThreshold + linThreshold)) and
+							   (y - (np.dot(a,[1,x,x**2])) <= -circleThreshold and y - (np.dot(a,[1,x,x**2])) >= -(circleThreshold + linThreshold)) and
 							   ( x <= limits[0] + linThreshold/2 ) and ( x >= limits[0] - linThreshold/2 ) ] ),
 					'r':np.array( [ (x,y) for x,y in crop if 
-							   (y - (m*x + b) <= -circleThreshold and y - (m*x + b) >= -(circleThreshold + linThreshold)) and
+							   (y - (np.dot(a,[1,x,x**2])) <= -circleThreshold and y - (np.dot(a,[1,x,x**2])) >= -(circleThreshold + linThreshold)) and
 							   ( x <= limits[1] + linThreshold/2 ) and ( x >= limits[1] - linThreshold/2 ) ] ) }
 
 	L = np.ones( ( linearPoints['l'].shape[0] , 2 ) )
@@ -194,6 +195,11 @@ for j,im in enumerate(images):
 	params = {'l':np.linalg.lstsq(L,l,rcond=None)[0],
 			  'r':np.linalg.lstsq(R,r,rcond=None)[0]}
 
+	print(np.linalg.lstsq(R,r,rcond=None))
+
+	#Couple things for starting tomorrow:
+	# 1) running into issue with trying to fit vertical line occassionally
+	# 2) seems like the baseline fitting isn't going great - might try parabola instead
 	lb, lm = params['l']
 	rb, rm = params['r']
 
@@ -214,29 +220,33 @@ for j,im in enumerate(images):
 
 
 	print(f'At time { j * everyNSeconds }: \t\t Contact angle left (deg): {ϕ["l"] : 6.3f} \t\t Contact angle right (deg): {ϕ["r"] : 6.3f}')
-	angles += [ ϕ ]
+	angles += [ (ϕ['l'],ϕ['r']) ]
 	time += [ j * everyNSeconds ]
 
 # Plot the last resulting figure with the fitted lines overlaid
-plt.figure(figsize = (5,5))
-plt.imshow(im,cmap = 'gray', vmin = 0, vmax = 1)
-plt.gca().axis('off')
+	plt.figure(figsize = (5,5))
+	plt.imshow(im,cmap = 'gray', vmin = 0, vmax = 1)
+	plt.gca().axis('off')
 
-# Baseline
-x = np.array([0,im.shape[1]])
-y = m * x + b
-plt.plot(x,y,'r-')
+	# Baseline
+	x = np.array([0,im.shape[1]])
+	y = np.dot(a,[1,x,x**2])
+	plt.plot(x,y,'r-')
 
-# Left side line
-yl = lm * x + lb
-plt.plot(x,yl,'r-')
+	# Left side line
+	yl = lm * x + lb
+	plt.plot(x,yl,'r-')
 
-# Right side line
-yr = rm * x + rb
-plt.plot(x,yr,'r-')
+	# Right side line
+	yr = rm * x + rb
+	plt.plot(x,yr,'r-')
 
-plt.xlim(cropPoints[0:2])
-plt.ylim(cropPoints[-1:-3:-1])
+
+	plt.xlim([0,500])
+	plt.ylim([0,500])
+	#plt.xlim(cropPoints[0:2])
+	#plt.ylim(cropPoints[-1:-3:-1])
+	plt.show()
 
 if video:
 	fig, ax1 = plt.subplots(figsize = (5,5))
@@ -257,12 +267,12 @@ else:
 path = '/'.join(parts[:-1]) #Leave off the actual file part
 filename = path + f'/results_{parts[-1]}.csv'
 
-print(f'Saving the data to {filename}')
-with open(filename,'w+') as file:
-	file.write(",".join([str(t) for t in time]))
-	file.write('\n')
-	file.write(",".join([str(s['l']) for s in angles]))
-	file.write('\n')
-	file.write(",".join([str(s['r']) for s in angles]))
+# print(f'Saving the data to {filename}')
+# with open(filename,'w+') as file:
+# 	file.write(",".join([str(t) for t in time]))
+# 	file.write('\n')
+# 	file.write(",".join([str(s['l']) for s in angles]))
+# 	file.write('\n')
+# 	file.write(",".join([str(s['r']) for s in angles]))
 
 plt.show()
