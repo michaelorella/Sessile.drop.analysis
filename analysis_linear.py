@@ -31,7 +31,9 @@ baselineThreshold = 20
 linThreshold = 20
 circleThreshold = 5
 everyNSeconds = 1
+baseOrder = 1
 σ = 5
+ε = 1e-2
 startSeconds = 10
 
 #Get the file type for the image file
@@ -51,6 +53,8 @@ kwargs = zip ( * [ iter(kwargs) ] * 2 )
 for argPair in kwargs:
 	if argPair[0] == '-b' or argPair[0] == '--baselineThreshold':
 		baselineThreshold = int(argPair[1])
+	elif argPair[0] == '-o' or argPair[0] == '--baselineOrder':
+		baseOrder = int(argPair[1])
 	elif argPair[0] == '-c' or argPair[0] == '--circleThreshold':
 		circleThreshold = int(argPair[1])
 	elif (argPair[0] == '-t' or argPair[0] == '--times') and video:
@@ -122,6 +126,11 @@ print(f'Proceeding with sigma = {σ : 6.2f}')
 plt.figure()
 scatAx = plt.axes()
 
+plt.figure(figsize = (5,5))
+imAxes = plt.axes()
+plt.ion()
+plt.show()
+
 for j,im in enumerate(images):
 	### Using scikit-image canny edge detection, find the image edges
 	edges = feature.canny(im,sigma = σ)
@@ -152,18 +161,22 @@ for j,im in enumerate(images):
 										y >= cropPoints[2] and 
 										y <= cropPoints[3] )])}
 
-	# Fit the baseline to a line of form y = a[0] + a[1]*x + a[2]*x**2 using np.linalg
-	X = np.ones((baseline['l'].shape[0] + baseline['r'].shape[0],3))
+	# Fit the baseline to a line of form y = Σ a[i]*x**i for i = 0 .. baseOrder using np.linalg
+	X = np.ones((baseline['l'].shape[0] + baseline['r'].shape[0],baseOrder + 1))
 	x = np.concatenate((baseline['l'][:,0],baseline['r'][:,0]))
-	for col in range(X.shape[1]):
+	for col in range(baseOrder + 1):
 		X[:,col] = np.power(x,col)
 
 	y = np.concatenate((baseline['l'][:,1],baseline['r'][:,1]))
 	a = np.linalg.lstsq(X,y, rcond = None)[0]
 
+	baseF = lambda x: np.dot(a,np.power(x,range(baseOrder + 1)))
+
+	assert ( len(a) == baseOrder + 1 )
+
 	# Now find the points in the circle
 	circle = np.array([(x,y) for x,y in crop if
-											y - (np.dot(a,[1,x,x**2]))  <= -circleThreshold])
+											y - (np.dot(a,np.power(x,range(baseOrder + 1))))  <= -circleThreshold])
 
 	scatAx.scatter(circle[:,0],circle[:,1])
 
@@ -178,10 +191,10 @@ for j,im in enumerate(images):
 	
 	# Get linear points
 	linearPoints = {'l':np.array( [ (x,y) for x,y in crop if 
-							   (y - (np.dot(a,[1,x,x**2])) <= -circleThreshold and y - (np.dot(a,[1,x,x**2])) >= -(circleThreshold + linThreshold)) and
+							   (y - (np.dot(a,np.power(x,range(baseOrder + 1)))) <= -circleThreshold and y - (np.dot(a,np.power(x,range(baseOrder + 1)))) >= -(circleThreshold + linThreshold)) and
 							   ( x <= limits[0] + linThreshold/2 ) and ( x >= limits[0] - linThreshold/2 ) ] ),
 					'r':np.array( [ (x,y) for x,y in crop if 
-							   (y - (np.dot(a,[1,x,x**2])) <= -circleThreshold and y - (np.dot(a,[1,x,x**2])) >= -(circleThreshold + linThreshold)) and
+							   (y - (np.dot(a,np.power(x,range(baseOrder + 1)))) <= -circleThreshold and y - (np.dot(a,np.power(x,range(baseOrder + 1)))) >= -(circleThreshold + linThreshold)) and
 							   ( x <= limits[1] + linThreshold/2 ) and ( x >= limits[1] - linThreshold/2 ) ] ) }
 
 	L = np.ones( ( linearPoints['l'].shape[0] , 2 ) )
@@ -192,29 +205,39 @@ for j,im in enumerate(images):
 	R[:,1] = linearPoints['r'][:,0]
 	r = linearPoints['r'][:,1]
 
-	params = {'l':np.linalg.lstsq(L,l,rcond=None)[0],
-			  'r':np.linalg.lstsq(R,r,rcond=None)[0]}
+	params = {'l':np.linalg.lstsq(L,l,rcond=None),
+			  'r':np.linalg.lstsq(R,r,rcond=None)}
 
-	print(np.linalg.lstsq(R,r,rcond=None))
-
-	#Couple things for starting tomorrow:
-	# 1) running into issue with trying to fit vertical line occassionally
-	# 2) seems like the baseline fitting isn't going great - might try parabola instead
-	lb, lm = params['l']
-	rb, rm = params['r']
+	# print(params)
+	# print(linearPoints)
 
 
-	# Define baseline vector
-	bv = [1, m]/np.linalg.norm([1,m])
+	# Running into issue with trying to fit vertical line occassionally
+	lb, lm = params['l'][0]
+	rb, rm = params['r'][0]
+
+
+	# Define baseline vector - slope will just be approximated from FD at each side (i.e. limit[0] and limit[1])
+	bvl = [1, (baseF(limits[0] + ε/2) - baseF(limits[0] - ε/2))/ε ]/np.linalg.norm([1,(baseF(limits[0] + ε/2) - baseF(limits[0] - ε/2))/ε])
+	bvr = [1, (baseF(limits[1] + ε/2) - baseF(limits[1] - ε/2))/ε ]/np.linalg.norm([1,(baseF(limits[1] + ε/2) - baseF(limits[1] - ε/2))/ε])
 
 	# Define right side vector
-	rv = [1, rm]/np.linalg.norm([1,rm])
+	if params['r'][2] != 1: #Check to make sure the line isn't vertical
+		rv = [1, rm]/np.linalg.norm([1,rm])
+	else:
+		rv = [0,1]
 
 	# Define left side vector
-	lv = [1, lm]/np.linalg.norm([1,lm])
+	if params['l'][2] != 1:
+		lv = [1, lm]/np.linalg.norm([1,lm])
+	else:
+		lv = [0,1]
 
 	# Calculate the angle between these two vectors defining the base-line and tangent-line
-	ϕ = {'l':180-np.arccos(np.dot(bv,lv))*360/2/np.pi , 'r':180-np.arccos(np.dot(bv,rv))*360/2/np.pi}
+	ϕ = {'l':180-np.arccos(np.dot(bvl,lv))*360/2/np.pi , 'r':180-np.arccos(np.dot(bvr,rv))*360/2/np.pi}
+	if ϕ['l'] > 120 or ϕ['r'] > 120:
+		print(f'Right vector: {rv} \t\t Left vector: {lv}')
+		print(f'Baseline vectors: {bvl} and {bvr}')
 	
 	# TODO:// Add the actual volume calculation here!
 
@@ -223,30 +246,39 @@ for j,im in enumerate(images):
 	angles += [ (ϕ['l'],ϕ['r']) ]
 	time += [ j * everyNSeconds ]
 
-# Plot the last resulting figure with the fitted lines overlaid
-	plt.figure(figsize = (5,5))
-	plt.imshow(im,cmap = 'gray', vmin = 0, vmax = 1)
-	plt.gca().axis('off')
+	# Plot the last resulting figure with the fitted lines overlaid
+	imAxes.clear()
+	imAxes.imshow(im,cmap = 'gray', vmin = 0, vmax = 1)
+	imAxes.axis('off')
 
 	# Baseline
 	x = np.array([0,im.shape[1]])
-	y = np.dot(a,[1,x,x**2])
-	plt.plot(x,y,'r-')
+	y = np.dot(a,np.power(x, [ [po]*len(x) for po in range(baseOrder + 1) ] ) )
+	imAxes.plot(x,y,'r-')
 
 	# Left side line
-	yl = lm * x + lb
-	plt.plot(x,yl,'r-')
+	if params['l'][2] != 1:
+		yl = lm * x + lb
+	else:
+		yl = np.array([0,im.shape[0]])
+		x = [linearPoints['l'][0,0]]*2
 
+	imAxes.plot(x,yl,'r-')
+
+	x = np.array([0,im.shape[1]])
 	# Right side line
-	yr = rm * x + rb
-	plt.plot(x,yr,'r-')
+	if params['r'][2] != 1:
+		yr = rm * x + rb
+	else:
+		yr = np.array([0,im.shape[0]])
+		x = [linearPoints['r'][0,0]]*2
+	
+	imAxes.plot(x,yr,'r-')
 
-
-	plt.xlim([0,500])
-	plt.ylim([0,500])
-	#plt.xlim(cropPoints[0:2])
-	#plt.ylim(cropPoints[-1:-3:-1])
-	plt.show()
+	imAxes.set_xlim(cropPoints[0:2])
+	imAxes.set_ylim(cropPoints[-1:-3:-1])
+	plt.draw()
+	plt.pause(0.1)
 
 if video:
 	fig, ax1 = plt.subplots(figsize = (5,5))
@@ -274,5 +306,5 @@ filename = path + f'/results_{parts[-1]}.csv'
 # 	file.write(",".join([str(s['l']) for s in angles]))
 # 	file.write('\n')
 # 	file.write(",".join([str(s['r']) for s in angles]))
-
+plt.ioff()
 plt.show()
