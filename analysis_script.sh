@@ -6,6 +6,6 @@ for file in "$target"/*.avi; do
 
 	if [ ! -f "$d/results_$f".csv ]; then
 		echo "Running on $file"
-		python analysis_linear.py "$file" -ss 10
+		python analysis.py "$file" -ss 10 --fitType linear
 	fi
 done
