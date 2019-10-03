@@ -38,7 +38,7 @@ circleThreshold = 5
 everyNSeconds = 1
 baseOrder = 1
 edgeThreshold = 5
-σ = 5
+σ = 1
 ε = 1e-2
 startSeconds = 10
 
