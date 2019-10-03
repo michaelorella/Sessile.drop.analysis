@@ -304,12 +304,17 @@ else:
 path = '/'.join(parts[:-1]) #Leave off the actual file part
 filename = path + f'/results_{parts[-1]}.csv'
 
-# print(f'Saving the data to {filename}')
-# with open(filename,'w+') as file:
-# 	file.write(",".join([str(t) for t in time]))
-# 	file.write('\n')
-# 	file.write(",".join([str(s['l']) for s in angles]))
-# 	file.write('\n')
-# 	file.write(",".join([str(s['r']) for s in angles]))
+print(f'Saving the data to {filename}')
+
+with open(filename,'w+') as file:
+	file.write('Time,' + ",".join([str(t) for t in time]))
+	file.write('\n')
+	file.write('Left angle,' + ",".join([str(s[0]) for s in angles]))
+	file.write('\n')
+	file.write('Right angle,' + ",".join([str(s[1]) for s in angles]))
+	file.write('\n')
+	file.write('Average angle,' + ",".join([str((s[1]+s[0])/2) for s in angles]))
+	file.write('\n')
+	file.write('Baseline width,' + ",".join([str(s) for s in baselineWidth]))
 plt.ioff()
 plt.show()
