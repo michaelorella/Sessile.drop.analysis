@@ -41,6 +41,7 @@ edgeThreshold = 5
 σ = 1
 ε = 1e-2
 startSeconds = 10
+tolerance = 8
 
 #Get the file type for the image file
 parts = image.split('.')
@@ -217,77 +218,57 @@ for j,im in enumerate(images):
 	params = {'l':np.linalg.lstsq(L,l,rcond=None),
 			  'r':np.linalg.lstsq(R,r,rcond=None)}
 
-	# print(params)
-	# print(linearPoints)
+	# Initialize paramater dictionaries
+	b = {}
+	m = {}
 
+	# Initialize vector dictionary
+	v = {}
 
-	# Running into issue with trying to fit vertical line occassionally
-	lb, lm = params['l'][0]
-	rb, rm = params['r'][0]
-
+	# Initialize vertical success dictionary
+	vertical = {'l':False,'r':False}
 
 	# Define baseline vector - slope will just be approximated from FD at each side (i.e. limit[0] and limit[1])
-	bvl = [1, (baseF(limits[0] + ε/2) - baseF(limits[0] - ε/2))/ε ]/np.linalg.norm([1,(baseF(limits[0] + ε/2) - baseF(limits[0] - ε/2))/ε])
-	bvr = [1, (baseF(limits[1] + ε/2) - baseF(limits[1] - ε/2))/ε ]/np.linalg.norm([1,(baseF(limits[1] + ε/2) - baseF(limits[1] - ε/2))/ε])
+	bv = {'l': [1, (baseF(limits[0] + ε/2) - baseF(limits[0] - ε/2))/ε ]/np.linalg.norm([1,(baseF(limits[0] + ε/2) - baseF(limits[0] - ε/2))/ε]) ,
+		  'r': [1, (baseF(limits[1] + ε/2) - baseF(limits[1] - ε/2))/ε ]/np.linalg.norm([1,(baseF(limits[1] + ε/2) - baseF(limits[1] - ε/2))/ε]) }
 
-	# Define right side vector
-	if params['r'][2] != 1: #Check to make sure the line isn't vertical
-		rv = [1, rm]/np.linalg.norm([1,rm])
-	else:
-		print('WOAHH!')
-		#Okay, we've got a verticalish line, so swap x <--> y
-		Rprime = np.ones( ( linearPoints['r'].shape[0] , 2 ) )
-		Rprime[:,1] = linearPoints['r'][:,1]
-		rprime = linearPoints['r'][:,0]
+	# Define vectors from fitted slopes
 
-		#Now fit to a vertical-ish line (x = m'y + b')
-		new_params = np.linalg.lstsq(Rprime,rprime,rcond=None)
+	for side in ['l','r']:
+		# Get the values for this side of the drop
+		fits, residual, rank, singularValues = params[side]
+		
+		# Extract the parameters
+		b[side], m[side] = fits
 
-		#If this didn't work, not sure why
-		if new_params[2] != 1:
-			print("We've got a big issue")
+		# Do all the checks I can think of to make sure that fit succeeded
+		if rank != 1 and np.prod(singularValues) > linearPoints[side].shape[0] and residual < tolerance: #Check to make sure the line isn't vertical
+			v[side] = [ 1 , m[side] ] / np.linalg.norm ( [ 1 , m[side] ] )
+		else:		
+			#Okay, we've got a verticalish line, so swap x <--> y and fit to c' = A' * θ'
+			Aprime = np.ones( ( linearPoints[side].shape[0] , 2 ) )
+			Aprime[:,1] = linearPoints[side][:,1]
+			cprime = linearPoints[side][:,0]
 
-		rb, rm = new_params[0]
+			#Now fit to a vertical-ish line (x = m'y + b')
+			new_params = np.linalg.lstsq(Aprime,cprime,rcond=None)
 
-		rv = [rm ,1]/np.linalg.norm([rm,1])
+			b[side], m[side] = new_params[0]
 
-	# Define left side vector
-	if params['l'][2] != 1:
-		lv = [1, lm]/np.linalg.norm([1,lm])
-	else:
-		print('WOAHH! Left')
-		Lprime = np.ones( ( linearPoints['l'].shape[0] , 2 ) )
-		Lprime[:,1] = linearPoints['l'][:,1]
-		lprime = linearPoints['l'][:,0]
+			v[side] = [ m[side] , 1 ] / np.linalg.norm ( [ m[side] , 1 ] )
 
-		print(Lprime)
-		print(lprime)
-
-		new_params = np.linalg.lstsq(Lprime,lprime,rcond=None)
-
-		print(new_params)
-
-		if new_params[2] != 1:
-			print("We've got a big issue")
-
-		lb, lm = new_params[0]
-
-		lv = [lm ,1]/np.linalg.norm([lm,1])
+			vertical[side] = True
 
 	# Reorient vectors to compute physically correct angles
-	if lv[1] > 0:
-		lv = -lv
-	if rv[1] < 0:
-		rv = -rv
+	if v['l'][1] > 0:
+		v['l'] = -v['l']
+	if v['r'][1] < 0:
+		v['r'] = -v['r']
 
 	# Calculate the angle between these two vectors defining the base-line and tangent-line
-	ϕ = {'l':np.arccos(np.dot(bvl,lv))*360/2/np.pi , 'r':np.arccos(np.dot(bvr,rv))*360/2/np.pi}
-	# if ϕ['l'] > 120 or ϕ['r'] > 120:
-	# 	print(f'Right vector: {rv} \t\t Left vector: {lv}')
-	# 	print(f'Baseline vectors: {bvl} and {bvr}')
+	ϕ = { i : np.arccos ( np.dot ( bv[i] , v[i] ) ) * 360 / 2 / np.pi for i in ['l','r'] }
 	
 	# TODO:// Add the actual volume calculation here!
-
 
 	print(f'At time { j * everyNSeconds }: \t\t Contact angle left (deg): {ϕ["l"] : 6.3f} \t\t Contact angle right (deg): {ϕ["r"] : 6.3f} \t\t Contact angle average (deg): {(ϕ["l"]+ϕ["r"])/2 : 6.3f} \t\t Baseline width (px): {limits[1] - limits[0]}')
 	angles += [ (ϕ['l'],ϕ['r']) ]
@@ -300,28 +281,19 @@ for j,im in enumerate(images):
 	imAxes.axis('off')
 
 	# Baseline
-	x = np.array([0,im.shape[1]])
+	x = np.linspace( 0 , im.shape[1] )
 	y = np.dot(a,np.power(x, [ [po]*len(x) for po in range(baseOrder + 1) ] ) )
 	imAxes.plot(x,y,'r-')
 
-	# Left side line
-	if params['l'][2] != 1:
-		yl = lm * x + lb
-	else:
-		yl = np.array([0,im.shape[0]])
-		x = [linearPoints['l'][0,0]]*2
-
-	imAxes.plot(x,yl,'r-')
-
-	x = np.array([0,im.shape[1]])
-	# Right side line
-	if params['r'][2] != 1:
-		yr = rm * x + rb
-	else:
-		yr = np.array([0,im.shape[0]])
-		x = [linearPoints['r'][0,0]]*2
-	
-	imAxes.plot(x,yr,'r-')
+	# Plot lines
+	for side in ['l','r']:
+		x = np.linspace( 0 , im.shape[1] )
+		if not vertical[side]:
+			y = m[side] * x + b[side]
+		else:
+			y = np.linspace( 0 , im.shape[0] )
+			x = m[side] * y + b[side]
+		imAxes.plot(x,y,'r-')
 
 	imAxes.set_xlim(cropPoints[0:2])
 	imAxes.set_ylim(cropPoints[-1:-3:-1])
