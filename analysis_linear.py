@@ -105,6 +105,7 @@ cropPoints = np.array(np.round(cropPoints),dtype = int)
 time = []
 angles = []
 volumes = []
+baselineWidth = []
 
 # Make sure that the edges are being detected well
 edges = feature.canny(images[0],sigma = σ)
@@ -239,17 +240,18 @@ for j,im in enumerate(images):
 		lv = [0,1]
 
 	# Calculate the angle between these two vectors defining the base-line and tangent-line
-	ϕ = {'l':180-np.arccos(np.dot(bvl,lv))*360/2/np.pi , 'r':180-np.arccos(np.dot(bvr,rv))*360/2/np.pi}
-	if ϕ['l'] > 120 or ϕ['r'] > 120:
-		print(f'Right vector: {rv} \t\t Left vector: {lv}')
-		print(f'Baseline vectors: {bvl} and {bvr}')
+	ϕ = {'l':np.arccos(np.dot(bvl,lv))*360/2/np.pi , 'r':np.arccos(np.dot(bvr,rv))*360/2/np.pi}
+	# if ϕ['l'] > 120 or ϕ['r'] > 120:
+	# 	print(f'Right vector: {rv} \t\t Left vector: {lv}')
+	# 	print(f'Baseline vectors: {bvl} and {bvr}')
 	
 	# TODO:// Add the actual volume calculation here!
 
 
-	print(f'At time { j * everyNSeconds }: \t\t Contact angle left (deg): {ϕ["l"] : 6.3f} \t\t Contact angle right (deg): {ϕ["r"] : 6.3f}')
+	print(f'At time { j * everyNSeconds }: \t\t Contact angle left (deg): {ϕ["l"] : 6.3f} \t\t Contact angle right (deg): {ϕ["r"] : 6.3f} \t\t Contact angle average (deg): {(ϕ["l"]+ϕ["r"])/2 : 6.3f} \t\t Baseline width (px): {limits[1] - limits[0]}')
 	angles += [ (ϕ['l'],ϕ['r']) ]
 	time += [ j * everyNSeconds ]
+	baselineWidth += [ limits[1] - limits[0] ]
 
 	# Plot the last resulting figure with the fitted lines overlaid
 	imAxes.clear()
@@ -293,6 +295,13 @@ if video:
 	ax1.plot(time,angles, marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10
 			 , linestyle = None)
 	ax1.tick_params(axis = 'y', labelcolor = color)
+
+	ax2 = ax1.twinx()
+	color = 'red'
+	ax2.set_ylabel('Baseline width [-]', fontsize = 10,color = color)
+	ax2.plot(time,baselineWidth,marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10 
+			 , linestyle = 'None')
+	ax2.tick_params(axis = 'y', labelcolor = color)
 
 	plt.tight_layout()
 	plt.draw()
