@@ -1,8 +1,6 @@
 #Import system for comman line processing
 import sys
 
-import time as timetime
-
 #Image processing import
 import skimage
 from skimage import feature
