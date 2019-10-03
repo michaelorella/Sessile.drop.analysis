@@ -23,9 +23,6 @@ import numpy as np
 import scipy as scipy
 import scipy.optimize as opt
 
-#File handling
-import sys
-
 function, image, *kwargs = sys.argv
 
 if sys.platform == 'linux' and 'home' in image and image[0] != '/':
