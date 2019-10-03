@@ -234,13 +234,51 @@ for j,im in enumerate(images):
 	if params['r'][2] != 1: #Check to make sure the line isn't vertical
 		rv = [1, rm]/np.linalg.norm([1,rm])
 	else:
-		rv = [0,1]
+		print('WOAHH!')
+		#Okay, we've got a verticalish line, so swap x <--> y
+		Rprime = np.ones( ( linearPoints['r'].shape[0] , 2 ) )
+		Rprime[:,1] = linearPoints['r'][:,1]
+		rprime = linearPoints['r'][:,0]
+
+		#Now fit to a vertical-ish line (x = m'y + b')
+		new_params = np.linalg.lstsq(Rprime,rprime,rcond=None)
+
+		#If this didn't work, not sure why
+		if new_params[2] != 1:
+			print("We've got a big issue")
+
+		rb, rm = new_params[0]
+
+		rv = [rm ,1]/np.linalg.norm([rm,1])
 
 	# Define left side vector
 	if params['l'][2] != 1:
 		lv = [1, lm]/np.linalg.norm([1,lm])
 	else:
-		lv = [0,1]
+		print('WOAHH! Left')
+		Lprime = np.ones( ( linearPoints['l'].shape[0] , 2 ) )
+		Lprime[:,1] = linearPoints['l'][:,1]
+		lprime = linearPoints['l'][:,0]
+
+		print(Lprime)
+		print(lprime)
+
+		new_params = np.linalg.lstsq(Lprime,lprime,rcond=None)
+
+		print(new_params)
+
+		if new_params[2] != 1:
+			print("We've got a big issue")
+
+		lb, lm = new_params[0]
+
+		lv = [lm ,1]/np.linalg.norm([lm,1])
+
+	# Reorient vectors to compute physically correct angles
+	if lv[1] > 0:
+		lv = -lv
+	if rv[1] < 0:
+		rv = -rv
 
 	# Calculate the angle between these two vectors defining the base-line and tangent-line
 	ϕ = {'l':np.arccos(np.dot(bvl,lv))*360/2/np.pi , 'r':np.arccos(np.dot(bvr,rv))*360/2/np.pi}
