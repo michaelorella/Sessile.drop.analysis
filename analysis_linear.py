@@ -188,6 +188,13 @@ for j,im in enumerate(images):
 	circle = np.array([(x,y) for x,y in crop if
 											y - (np.dot(a,np.power(x,range(baseOrder + 1))))  <= -circleThreshold])
 
+	# Make sure that flat droplets (wetted) are ignored (i.e. assign angle to NaN and continue)
+	if circle.shape[0] < 5:
+		angles += [ (np.NaN, np.NaN) ]
+		time += [ j * everyNSeconds ]
+		baselineWidth += [ np.NaN ]
+		break	
+
 	scatAx.scatter(circle[:,0],circle[:,1])
 
 	# Look for the greatest distance between points on the baseline
@@ -338,5 +345,5 @@ with open(filename,'w+') as file:
 	file.write('Average angle,' + ",".join([str((s[1]+s[0])/2) for s in angles]))
 	file.write('\n')
 	file.write('Baseline width,' + ",".join([str(s) for s in baselineWidth]))
-plt.ioff()
-plt.show()
+# plt.ioff()
+# plt.show()
