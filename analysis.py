@@ -29,12 +29,19 @@ if sys.platform == 'linux' and 'home' in image and image[0] != '/':
 	image = f'/{image}'
 
 #Set default numerical arguments
-lim = 10
+separationThreshold = 10
 baselineThreshold = 20
+linThreshold = 20
 circleThreshold = 5
 everyNSeconds = 1
-sigma = 5
+baseOrder = 1
+edgeThreshold = 5
+σ = 1
+ε = 1e-2
 startSeconds = 10
+tolerance = 8
+fitType = 'linear'
+lim = 10
 
 #Get the file type for the image file
 parts = image.split('.')
@@ -51,25 +58,38 @@ elif ext.lower() != 'jpg' and ext.lower() != 'png' and ext.lower() != 'gif':
 kwargs = zip ( * [ iter(kwargs) ] * 2 )
 
 for argPair in kwargs:
-	if argPair[0] == '-l' or argPair[0] == '--lim':
-		lim = int(argPair[1])
-	elif argPair[0] == '-b' or argPair[0] == '--baselineThreshold':
+	if argPair[0] == '-b' or argPair[0] == '--baselineThreshold':
 		baselineThreshold = int(argPair[1])
+	elif argPair[0] == '-o' or argPair[0] == '--baselineOrder':
+		baseOrder = int(argPair[1])
 	elif argPair[0] == '-c' or argPair[0] == '--circleThreshold':
 		circleThreshold = int(argPair[1])
+	elif argPair[0] == '-e' or argPair[0] == '--edgeThreshold':
+		edgeThreshold = int(argPair[1])
 	elif (argPair[0] == '-t' or argPair[0] == '--times') and video:
 		everyNSeconds = float(argPair[1])
 	elif argPair[0] == '-s':
-		sigma = float(argPair[1])
+		σ = float(argPair[1])
 	elif (argPair[0] == '-ss' or argPair[0] == '--startSeconds') and video:
 		startSeconds = float(argPair[1])
+	elif (argPair[0] == '--fitType'):
+		fitType = argPair[1].replace(" ","").lower()
 
+
+if fitType == 'circular':
+	# Define the loss function that we use for fitting
+	def dist(param, points):
+		*z , r = param
+		ar = [(np.linalg.norm(np.array(z) - np.array(point)) - r ) ** 2 
+				for point in points]
+		return np.sum(ar)
 
 ### Strategy for automating contact angle measurements for Lauren+McLain
 
 ### Use some toolkit to extract every nth frame from avi file
 
 ### At every extracted frame, read it as a grayscale numpy array
+# TODO!! - get frames from video
 
 if not video:
 	images = [io.imread(image,as_gray = True)]
@@ -99,31 +119,17 @@ cropPoints = np.array(np.round(cropPoints),dtype = int)
 time = []
 angles = []
 volumes = []
-
-# Define the loss function that we use for fitting
-def dist(param, points):
-	*z , r = param
-	ar = [(np.linalg.norm(np.array(z) - np.array(point)) - r ) ** 2 
-			for point in points]
-	return np.sum(ar)
-
-# Define function that calculates residual for intersection between line (m,b) and circle (z,r)
-def rootFun(x,z,r,m,b):
-	res = [0,0]
-	res[0] = (x[0] - z[0]) ** 2 + (x[1] - z[1])**2 - r**2
-	res[1] = x[1] - m*x[0] - b
-	return res
-
+baselineWidth = []
 
 # Make sure that the edges are being detected well
-edges = feature.canny(images[0],sigma = sigma)
+edges = feature.canny(images[0],sigma = σ)
 fig , ax = plt.subplots(2,1,gridspec_kw = {'height_ratios': [10,1]} , figsize = (8,8))
 ax[0].imshow(edges, cmap = 'gray_r', vmin = 0, vmax = 1)
 ax[0].set_xlim(cropPoints[:2])
 ax[0].set_ylim(cropPoints[2:])
 ax[0].axis('off')
 
-sigmaSlide = widgets.Slider(ax[1],r'$\log_{10}\sigma$',-1,1,valinit = np.log10(sigma),color = 'gray')
+sigmaSlide = widgets.Slider(ax[1],r'$\log_{10}\sigma$',-1,1,valinit = np.log10(σ),color = 'gray')
 
 def update(val):
 	edges = feature.canny(images[0], sigma = np.power(10,val))
@@ -133,15 +139,21 @@ def update(val):
 sigmaSlide.on_changed(update)
 print('Waiting for your input, please select a desired filter value, and close image when done')
 plt.show()
-sigma = np.power(10,sigmaSlide.val)
-print(f'Proceeding with sigma = {sigma : 6.2f}')
+σ = np.power(10,sigmaSlide.val)
+print(f'Proceeding with sigma = {σ : 6.2f}')
 
+# Create a set of axes to hold the scatter points for all frames in the videos
 plt.figure()
 scatAx = plt.axes()
 
+plt.figure(figsize = (5,5))
+imAxes = plt.axes()
+plt.ion()
+plt.show()
+
 for j,im in enumerate(images):
 	### Using scikit-image canny edge detection, find the image edges
-	edges = feature.canny(im,sigma = sigma)
+	edges = feature.canny(im,sigma = σ)
 
 	# Obtain the X,Y coordinates of the True values in this edge image 
 	# (for processing)
@@ -169,148 +181,265 @@ for j,im in enumerate(images):
 										y >= cropPoints[2] and 
 										y <= cropPoints[3] )])}
 
-	# Fit the baseline to a line of form y = m*x + b using np.linalg
-	A = np.ones((baseline['l'].shape[0] + baseline['r'].shape[0],2))
-	A[:,1] = np.concatenate((baseline['l'][:,0],baseline['r'][:,0]))
-	c = np.concatenate((baseline['l'][:,1],baseline['r'][:,1]))
-	b,m = np.linalg.lstsq(A,c, rcond = None)[0]
+	# Fit the baseline to a line of form y = Σ a[i]*x**i for i = 0 .. baseOrder using np.linalg
+	X = np.ones((baseline['l'].shape[0] + baseline['r'].shape[0],baseOrder + 1))
+	x = np.concatenate((baseline['l'][:,0],baseline['r'][:,0]))
+	for col in range(baseOrder + 1):
+		X[:,col] = np.power(x,col)
+
+	y = np.concatenate((baseline['l'][:,1],baseline['r'][:,1]))
+	a = np.linalg.lstsq(X,y, rcond = None)[0]
+
+	baseF = lambda x: np.dot(a,np.power(x,range(baseOrder + 1)))
+
+	assert ( len(a) == baseOrder + 1 )
 
 	# Now find the points in the circle
 	circle = np.array([(x,y) for x,y in crop if
-											y - (m*x + b)  <= -circleThreshold])
+											y - (np.dot(a,np.power(x,range(baseOrder + 1))))  <= -circleThreshold])
+
+	# Make sure that flat droplets (wetted) are ignored (i.e. assign angle to NaN and continue)
+	if circle.shape[0] < 5:
+		angles += [ (np.NaN, np.NaN) ]
+		time += [ j * everyNSeconds ]
+		baselineWidth += [ np.NaN ]
+		break	
 
 	scatAx.scatter(circle[:,0],circle[:,1])
 
+	# Plot the current image
+	imAxes.clear()
+	imAxes.imshow(im,cmap = 'gray', vmin = 0, vmax = 1)
+	imAxes.axis('off')
 
-	# Get the cropped image width
-	width = cropPoints[1] - cropPoints[0]
+	# Baseline
+	x = np.linspace( 0 , im.shape[1] )
+	y = np.dot(a,np.power(x, [ [po]*len(x) for po in range(baseOrder + 1) ] ) )
+	imAxes.plot(x,y,'r-')
 
-	# Try to fit a circle to the points that we have extracted, only varying the radius about the
-	# center of all the points
-	z = np.mean(circle, axis = 0)
-	res = opt.minimize ( lambda x: dist( [*z , x] , circle ) , 
-					     width/2 )
+	if fitType == 'linear':
 
-	#Get the results	
-	r = res['x']
-	theta = np.linspace(0,2 * np.pi,num = 500)
-	x = z[0] + r * np.cos(theta)
-	y = z[1] + r * np.sin(theta)
+		# Look for the greatest distance between points on the baseline
+		# Future Mike here: apparently I had the idea that a drop and baseline must be the same color - bad idea! There can still be edges at the bottom of the drop.
+		# To rectify this, I need some way of detecting where the circle pops up. Just look for points off of the baseline?
 
-	#print(f"Residual of {res['fun']} before starting")
+		# Magic 2 just to get the top three rows of the circle to find where the edges are
+		offBaseline = np.array([ (x,y) for x,y in circle if y  - (np.dot(a,np.power(x,range(baseOrder + 1)))) >= -(circleThreshold + edgeThreshold)])
 
-	iters = 0
-
-	# Keep retrying the fitting while the function value is large, as this 
-	# indicates that we probably have 2 circles (e.g. there's something light
-	# in the middle of the image)
-	while res['fun'] >= circle.shape[0] and iters < lim:
+		limits = [ np.amin(offBaseline[:,0]) , np.amax(offBaseline[:,0]) ]
 		
-		# Extract and fit only those points outside the previously fit circle	
-		points = np.array( [ (x,y) for x,y in circle if 
-							 (x - z[0]) ** 2 + (y - z[1]) ** 2 >= r ** 2 ] )
+		# Get linear points
+		linearPoints = {'l':np.array( [ (x,y) for x,y in crop if 
+								   (y - (np.dot(a,np.power(x,range(baseOrder + 1)))) <= -circleThreshold and y - (np.dot(a,np.power(x,range(baseOrder + 1)))) >= -(circleThreshold + linThreshold)) and
+								   ( x <= limits[0] + linThreshold/2 ) and ( x >= limits[0] - linThreshold/2 ) ] ),
+						'r':np.array( [ (x,y) for x,y in crop if 
+								   (y - (np.dot(a,np.power(x,range(baseOrder + 1)))) <= -circleThreshold and y - (np.dot(a,np.power(x,range(baseOrder + 1)))) >= -(circleThreshold + linThreshold)) and
+								   ( x <= limits[1] + linThreshold/2 ) and ( x >= limits[1] - linThreshold/2 ) ] ) }
+
+		L = np.ones( ( linearPoints['l'].shape[0] , 2 ) )
+		L[:,1] = linearPoints['l'][:,0]
+		l = linearPoints['l'][:,1]
+
+		R = np.ones( ( linearPoints['r'].shape[0] , 2 ) )
+		R[:,1] = linearPoints['r'][:,0]
+		r = linearPoints['r'][:,1]
+
+		params = {'l':np.linalg.lstsq(L,l,rcond=None),
+				  'r':np.linalg.lstsq(R,r,rcond=None)}
+
+		# Initialize paramater dictionaries
+		b = {}
+		m = {}
+
+		# Initialize vector dictionary
+		v = {}
+
+		# Initialize vertical success dictionary
+		vertical = {'l':False,'r':False}
+
+		# Define baseline vector - slope will just be approximated from FD at each side (i.e. limit[0] and limit[1])
+		bv = {'l': [1, (baseF(limits[0] + ε/2) - baseF(limits[0] - ε/2))/ε ]/np.linalg.norm([1,(baseF(limits[0] + ε/2) - baseF(limits[0] - ε/2))/ε]) ,
+			  'r': [1, (baseF(limits[1] + ε/2) - baseF(limits[1] - ε/2))/ε ]/np.linalg.norm([1,(baseF(limits[1] + ε/2) - baseF(limits[1] - ε/2))/ε]) }
+
+		# Define vectors from fitted slopes
+
+		for side in ['l','r']:
+			# Get the values for this side of the drop
+			fits, residual, rank, singularValues = params[side]
+			
+			# Extract the parameters
+			b[side], m[side] = fits
+
+			# Do all the checks I can think of to make sure that fit succeeded
+			if rank != 1 and np.prod(singularValues) > linearPoints[side].shape[0] and residual < tolerance: #Check to make sure the line isn't vertical
+				v[side] = [ 1 , m[side] ] / np.linalg.norm ( [ 1 , m[side] ] )
+			else:		
+				#Okay, we've got a verticalish line, so swap x <--> y and fit to c' = A' * θ'
+				Aprime = np.ones( ( linearPoints[side].shape[0] , 2 ) )
+				Aprime[:,1] = linearPoints[side][:,1]
+				cprime = linearPoints[side][:,0]
+
+				#Now fit to a vertical-ish line (x = m'y + b')
+				new_params = np.linalg.lstsq(Aprime,cprime,rcond=None)
+
+				b[side], m[side] = new_params[0]
+
+				v[side] = [ m[side] , 1 ] / np.linalg.norm ( [ m[side] , 1 ] )
+
+				vertical[side] = True
+
+		# Reorient vectors to compute physically correct angles
+		if v['l'][1] > 0:
+			v['l'] = -v['l']
+		if v['r'][1] < 0:
+			v['r'] = -v['r']
+
+		# Calculate the angle between these two vectors defining the base-line and tangent-line
+		ϕ = { i : np.arccos ( np.dot ( bv[i] , v[i] ) ) * 360 / 2 / np.pi for i in ['l','r'] }
+
+		# Plot lines
+		for side in ['l','r']:
+			x = np.linspace( 0 , im.shape[1] )
+			if not vertical[side]:
+				y = m[side] * x + b[side]
+			else:
+				y = np.linspace( 0 , im.shape[0] )
+				x = m[side] * y + b[side]
+			imAxes.plot(x,y,'r-')
+
+		bWidth = limits[1] - limits[0]
+
+		V = np.NaN
+		# TODO:// Add the actual volume calculation here!
+
+	elif fitType == 'circular':
+		# Get the cropped image width
+		width = cropPoints[1] - cropPoints[0]
+
+		# Try to fit a circle to the points that we have extracted, only varying the radius about the
+		# center of all the points
+		z = np.mean(circle, axis = 0)
+		res = opt.minimize ( lambda x: dist( [*z , x] , circle ) , 
+						     width/2 )
+
+		#Get the results	
+		r = res['x']
+		theta = np.linspace(0,2 * np.pi,num = 500)
+		x = z[0] + r * np.cos(theta)
+		y = z[1] + r * np.sin(theta)
+
+		iters = 0
+
+		# Keep retrying the fitting while the function value is large, as this 
+		# indicates that we probably have 2 circles (e.g. there's something light
+		# in the middle of the image)
+		while res['fun'] >= circle.shape[0] and iters < lim:
+			
+			# Extract and fit only those points outside the previously fit circle	
+			points = np.array( [ (x,y) for x,y in circle if 
+								 (x - z[0]) ** 2 + (y - z[1]) ** 2 >= r ** 2 ] )
 
 
-		# Fit this new set of points, using the full set of parameters
-		res = opt.minimize ( lambda x: dist( x , points ) ,
-							 np.concatenate( ( np.mean( points, axis = 0) ,
-							 				 [width / 4] ) ) ) 
+			# Fit this new set of points, using the full set of parameters
+			res = opt.minimize ( lambda x: dist( x , points ) ,
+								 np.concatenate( ( np.mean( points, axis = 0) ,
+								 				 [width / 4] ) ) ) 
 
-		# Extract the new fit parameters
-		*z , r = res['x']
+			# Extract the new fit parameters
+			*z , r = res['x']
 
-		# Up the loop count
-		#print(f"Residual of {res['fun']} at iteration {iters}")
-		
-		iters += 1
+			# Up the loop count
+			#print(f"Residual of {res['fun']} at iteration {iters}")
+			
+			iters += 1
 
-	# Now we need to actually get the points of intersection and the angles from
-	# these fitted curves
-	# Rather than brute force numerical solution, use combinations of coordinate translations and
-	# rotations to arrive at a horizontal line passing through a circle
+		# Now we need to actually get the points of intersection and the angles from
+		# these fitted curves
+		# Rather than brute force numerical solution, use combinations of coordinate translations and
+		# rotations to arrive at a horizontal line passing through a circle
 
-	# First step will be to translate the origin to the center-point of our fitted circle
-	# x = x - z[0], y = y - z[1]
-	# Circle : x**2 + y**2 = r**2
-	# Line : y = m * x + (m * z[0] + b - z[1])
+		# First step will be to translate the origin to the center-point of our fitted circle
+		# x = x - z[0], y = y - z[1]
+		# Circle : x**2 + y**2 = r**2
+		# Line : y = m * x + (m * z[0] + b - z[1])
 
-	# Now we need to rotate clockwise about the origin by an angle q, s.t. tan(q) = m
-	# Our transformation is defined by the typical rotation matrix 
-	#	[x;y] = [ [ cos(q) , sin(q) ] ; 
-	#			  [-sin(q) , cos(q) ] ] * [ x ; y ]
-	# Circle : x**2 + y**2 = r**2
-	# Line : y = (m*z[0] + b[0] - z[1])/sqrt(1 + m**2) (no dependence on x - as expected)
+		# Now we need to rotate clockwise about the origin by an angle q, s.t. tan(q) = m
+		# Our transformation is defined by the typical rotation matrix 
+		#	[x;y] = [ [ cos(q) , sin(q) ] ; 
+		#			  [-sin(q) , cos(q) ] ] * [ x ; y ]
+		# Circle : x**2 + y**2 = r**2
+		# Line : y = (m*z[0] + b[0] - z[1])/sqrt(1 + m**2) (no dependence on x - as expected)
 
-	# With this simplified scenario, we can easily identify the points (x,y) where the line y = B
-	# intersects the circle x**2 + y**2 = r**2
-	# In our transformed coordinates, only keeping the positive root, this is:
-	B = ( m * z[0] + b - z[1] ) / np.sqrt( 1 + m**2 )
-	x_t = np.sqrt( r ** 2 - B ** 2 )
-	y_t = B
+		# With this simplified scenario, we can easily identify the points (x,y) where the line y = B
+		# intersects the circle x**2 + y**2 = r**2
+		# In our transformed coordinates, only keeping the positive root, this is:
+		b, m = a[0:2]
 
-	# For contact angle, want interior angle, so look at vector in negative x direction 
-	# (this is our baseline)
-	v1 = [-1 , 0]
 
-	# Now get line tangent to circle at x_t, y_t
-	if B != 0:
-		slope = - x_t / y_t
-		v2 = np.array( [ 1 , slope ] )
-		v2 = v2 / np.linalg.norm ( v2 )
-		if B < 0: # We want the interior angle, so when the line is above the origin (into more negative y), look left 
-			v2 = -v2
+		B = ( m * z[0] + b - z[1] ) / np.sqrt( 1 + m**2 )
+		x_t = np.sqrt( r ** 2 - B ** 2 )
+		y_t = B
+
+		# TODO:// replace the fixed linear baseline with linear approximations near the intersection points
+
+		# For contact angle, want interior angle, so look at vector in negative x direction 
+		# (this is our baseline)
+		v1 = [-1 , 0]
+
+		# Now get line tangent to circle at x_t, y_t
+		if B != 0:
+			slope = - x_t / y_t
+			v2 = np.array( [ 1 , slope ] )
+			v2 = v2 / np.linalg.norm ( v2 )
+			if B < 0: # We want the interior angle, so when the line is above the origin (into more negative y), look left 
+				v2 = -v2
+		else:
+			v2 = [0 , 1]
+
+		ϕ = { i : np.arccos ( np.dot ( v1 , v2 ) ) * 360 / 2 / np.pi for i in ['l','r'] }
+		bWidth = 2 * x_t
+
+		V = 2/3 * np.pi * r ** 3  + np.pi * r ** 2 * B - np.pi * B ** 3 / 3
+
+		# Fitted circle
+		theta = np.linspace(0,2 * np.pi,num = 100)
+		x = z[0] + r * np.cos(theta)
+		y = z[1] + r * np.sin(theta)
+		imAxes.plot(x,y,'r-')
+
 	else:
-		v2 = [0 , 1]
+		raise Exception('Unknown fit type! Try another.')
 
-	# Calculate the angle between these two vectors defining the base-line and tangent-line
-	phi = np.arccos(np.dot(v1,v2))*360/2/np.pi
-	V = 2/3 * np.pi * r ** 3  + np.pi * r ** 2 * B - np.pi * B ** 3 / 3
-	print(f'At time { j * everyNSeconds }: \t\t Contact angle (deg): {phi : 6.3f} \t\t Volume (px**3): {V : 6.3f} \t\t Radius (px): {r : 6.3f} \t\t Baseline (px): {B : 6.3f}')
-	volumes += [ V ] 
-	angles += [ phi ]
+	print(f'At time { j * everyNSeconds }: \t\t Contact angle left (deg): {ϕ["l"] : 6.3f} \t\t Contact angle right (deg): {ϕ["r"] : 6.3f} \t\t Contact angle average (deg): {(ϕ["l"]+ϕ["r"])/2 : 6.3f} \t\t Baseline width (px): {bWidth : 4.1f}')
+	angles += [ (ϕ['l'],ϕ['r']) ]
 	time += [ j * everyNSeconds ]
+	baselineWidth += [ bWidth ]
+	volumes += [ V ]
 
-	# Might be more elegant to do it this way, but also could be more time consuming
-	# Transform into new coordinate system so baseline is flat (i.e. vector from [1,m] -> [a,0])
+	# Format the plot nicely
+	imAxes.set_xlim(cropPoints[0:2])
+	imAxes.set_ylim(cropPoints[-1:-3:-1])
+	plt.draw()
+	plt.pause(0.1)
 
-# Plot the last resulting figure with the fitted lines overlaid
-plt.figure(figsize = (5,5))
-plt.imshow(im,cmap = 'gray', vmin = 0, vmax = 1)
-plt.gca().axis('off')
+if video:
+	fig, ax1 = plt.subplots(figsize = (5,5))
+	color = 'black'
+	ax1.set_xlabel('Time [s]')
+	ax1.set_ylabel('Contact Angle [deg]', fontsize = 10,color = color)
+	ax1.plot(time,angles, marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10
+			 , linestyle = None)
+	ax1.tick_params(axis = 'y', labelcolor = color)
 
-# Fitted circle
-theta = np.linspace(0,2 * np.pi,num = 100)
-x = z[0] + r * np.cos(theta)
-y = z[1] + r * np.sin(theta)
-plt.plot(x,y,'r-')
+	ax2 = ax1.twinx()
+	color = 'red'
+	ax2.set_ylabel('Baseline width [-]', fontsize = 10,color = color)
+	ax2.plot(time,baselineWidth,marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10 
+			 , linestyle = 'None')
+	ax2.tick_params(axis = 'y', labelcolor = color)
 
-# Baseline
-x = np.array([0,im.shape[1]])
-y = m * x + b
-plt.plot(x,y,'r-')
-plt.xlim(cropPoints[0:2])
-plt.ylim(cropPoints[-1:-3:-1])
-
-# Converting to relative volume changes
-volumes = np.array(volumes)/volumes[0]
-
-fig, ax1 = plt.subplots(figsize = (5,5))
-color = 'black'
-ax1.set_xlabel('Time [s]')
-ax1.set_ylabel('Contact Angle [deg]', fontsize = 10,color = color)
-ax1.plot(time,angles, marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10
-		 , linestyle = 'None')
-ax1.tick_params(axis = 'y', labelcolor = color)
-
-ax2 = ax1.twinx()
-color = 'red'
-ax2.set_ylabel('Volume [-]', fontsize = 10,color = color)
-ax2.plot(time,volumes,marker = '.',markerfacecolor = color,markeredgecolor = color,markersize = 10 
-		 , linestyle = 'None')
-ax2.tick_params(axis = 'y', labelcolor = color)
-
-plt.tight_layout()
-plt.draw()
+	plt.tight_layout()
+	plt.draw()
 
 if '\\' in image:
 	parts = image.split('\\')
@@ -320,11 +449,16 @@ path = '/'.join(parts[:-1]) #Leave off the actual file part
 filename = path + f'/results_{parts[-1]}.csv'
 
 print(f'Saving the data to {filename}')
-with open(filename,'w+') as file:
-	file.write(",".join([str(t) for t in time]))
-	file.write('\n')
-	file.write(",".join([str(s) for s in angles]))
-	file.write('\n')
-	file.write(','.join([str(s) for s in volumes]))
 
-plt.show()
+with open(filename,'w+') as file:
+	file.write('Time,' + ",".join([str(t) for t in time]))
+	file.write('\n')
+	file.write('Left angle,' + ",".join([str(s[0]) for s in angles]))
+	file.write('\n')
+	file.write('Right angle,' + ",".join([str(s[1]) for s in angles]))
+	file.write('\n')
+	file.write('Average angle,' + ",".join([str((s[1]+s[0])/2) for s in angles]))
+	file.write('\n')
+	file.write('Baseline width,' + ",".join([str(s) for s in baselineWidth]))
+	file.write('\n')
+	file.write('Volume,' + ",".join([str(s) for s in volumes]))
