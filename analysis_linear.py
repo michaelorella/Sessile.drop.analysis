@@ -1,6 +1,8 @@
 #Import system for comman line processing
 import sys
 
+import time as timetime
+
 #Image processing import
 import skimage
 from skimage import feature
@@ -24,6 +26,9 @@ import scipy as scipy
 import scipy.optimize as opt
 
 function, image, *kwargs = sys.argv
+
+if sys.platform == 'linux' and 'home' in image and image[0] != '/':
+	image = f'/{image}'
 
 #Set default numerical arguments
 separationThreshold = 10
