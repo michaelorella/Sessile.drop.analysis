@@ -32,13 +32,11 @@ if sys.platform == 'linux' and 'home' in image and image[0] != '/':
 	image = f'/{image}'
 
 #Set default numerical arguments
-separationThreshold = 10
 baselineThreshold = 20
 linThreshold = 20
 circleThreshold = 5
 everyNSeconds = 1
 baseOrder = 1
-edgeThreshold = 5
 σ = 1
 ε = 1e-2
 startSeconds = 10
@@ -67,8 +65,8 @@ for argPair in kwargs:
 		baseOrder = int(argPair[1])
 	elif argPair[0] == '-c' or argPair[0] == '--circleThreshold':
 		circleThreshold = int(argPair[1])
-	elif argPair[0] == '-e' or argPair[0] == '--edgeThreshold':
-		edgeThreshold = int(argPair[1])
+	elif argPair[0] == '-l' or argPair[0] == '--linThreshold':
+		linThreshold = int(argPair[1])
 	elif (argPair[0] == '-t' or argPair[0] == '--times') and video:
 		everyNSeconds = float(argPair[1])
 	elif argPair[0] == '-s':
@@ -227,7 +225,7 @@ for j,im in enumerate(images):
 		# To rectify this, I need some way of detecting where the circle pops up. Just look for points off of the baseline?
 
 		# Magic 2 just to get the top three rows of the circle to find where the edges are
-		offBaseline = np.array([ (x,y) for x,y in circle if y  - (np.dot(a,np.power(x,range(baseOrder + 1)))) >= -(circleThreshold + edgeThreshold)])
+		offBaseline = np.array([ (x,y) for x,y in circle if y  - (np.dot(a,np.power(x,range(baseOrder + 1)))) >= -(circleThreshold + linThreshold)])
 
 		limits = [ np.amin(offBaseline[:,0]) , np.amax(offBaseline[:,0]) ]
 		
